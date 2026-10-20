@@ -1,0 +1,22 @@
+# This is a public, static tool repository. Never commit research media or labels.
+*.mp4
+*.mov
+*.avi
+*.mkv
+*.webm
+*.xlsx
+*.xls
+*.csv
+*.pth
+*.pt
+*.ckpt
+*.tar
+*.zip
+videos/
+datasets/
+checkpoints/
+annotations/
+.env
+.env.*
+node_modules/
+.DS_Store

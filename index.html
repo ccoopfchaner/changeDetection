@@ -1,0 +1,267 @@
+<!doctype html>
+<html lang="zh-CN">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="referrer" content="no-referrer">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; media-src blob:; connect-src 'none'; img-src 'self' data:; base-uri 'none'; form-action 'none'">
+<title>葡萄疏果关键帧标注查看器</title>
+<style>
+  body{font:16px/1.6 system-ui,"Microsoft YaHei",sans-serif;max-width:1080px;margin:24px auto;padding:0 16px;color:#20252b;background:#f6f7f9}
+  h1{font-size:24px}p{margin:10px 0}.note{background:#fff4d8;padding:12px;border-radius:8px}
+  video{display:block;width:100%;max-height:65vh;background:#151515;margin:16px 0}
+  .tools{display:flex;flex-wrap:wrap;gap:10px;align-items:center;padding:14px;background:white;border-radius:8px}
+  button,input,select{font:inherit}button{padding:6px 12px}input[type=number]{width:110px;padding:5px}
+  .tools+.tools{margin-top:10px}select{padding:6px}#replay-state{color:#555}
+  #frame{font-size:22px;font-weight:650}#state{min-height:26px;color:#555}.warn{color:#a12a12!important}
+</style>
+<h1>葡萄疏果关键帧标注查看器</h1>
+<p>先下载并解压老师发放的视频资料包与Excel填写表，再选择下方的本地MP4。在Excel中填写此页确认的<strong>源帧号（从1开始）</strong>。</p><p><a href="guide.html">完整标注说明</a> · <a href="guide.txt" download>下载文字说明</a> · 版本2026-10-20 · 学生无需登录GitHub</p>
+<p class="note">仅适用于本批<strong>恒定 30 fps 原视频</strong>，请勿使用网盘转码预览或另行变速、裁剪的视频。本页调倍速只改变观看速度，不修改视频，也不改变源帧号。网站仅提供查看工具，不托管视频；所选视频只在本机读取，不上传。标注仍手动填入老师的Excel，网页不保存标签。</p>
+<p class="note"><strong>先试播再标：</strong>本批原视频是4K HEVC。网页上线不等于浏览器具备HEVC解码能力。若黑屏或没有“已显示源帧”，请联系老师，不要猜帧。自行转码、裁剪或改名的视频会被校验拒绝。网盘视频地址与Excel由老师另行发放，不在此公开。</p>
+<p><input id="file" type="file" accept="video/mp4,.mp4"><span id="name"></span></p>
+<video id="video" playsinline preload="metadata"></video>
+<div class="tools">
+  <button id="play" disabled>播放</button>
+  <label>观看倍速 <select id="speed" disabled><option value="0.1">0.1×</option><option value="0.25" selected>0.25×（推荐）</option><option value="0.5">0.5×</option><option value="1">1×</option><option value="2">2×</option></select></label>
+  <button id="recent" disabled>回放前2秒</button>
+  <span>先慢放找过程，再暂停逐帧确认起止。</span>
+</div>
+<div class="tools">
+  <button id="previous" disabled>← 上一帧</button><button id="next" disabled>下一帧 →</button>
+  <span id="frame">已显示源帧：—</span>
+  <label>跳转到 <input id="jump" type="number" min="1" step="1" placeholder="源帧号" disabled></label>
+  <button id="go" disabled>跳转</button>
+</div>
+<div class="tools">
+  <label>回放起帧 <input id="range-start" type="number" min="1" step="1" disabled></label>
+  <button id="mark-start" disabled>用当前帧作起帧</button>
+  <label>回放止帧 <input id="range-end" type="number" min="1" step="1" disabled></label>
+  <button id="mark-end" disabled>用当前帧作止帧</button>
+  <label><input id="repeat" type="checkbox" checked disabled>循环</label>
+  <button id="replay" disabled>回放区间</button><button id="stop-replay" disabled>停止回放</button>
+</div>
+<p id="replay-state" role="status">回放范围只是临时观察窗口，不会写入填写表；建议包含事件前后各约1秒。</p>
+<p id="state" role="status">尚未选择视频。</p>
+<p>暂停后可用键盘左右键逐帧查看；空格播放／暂停；输入帧号后按 Enter 跳转。逐帧或手动跳转会停止区间回放。回放只用于观察，PNR起止仍须暂停后逐帧确认；不要把回放窗口直接抄成PNR。</p>
+<script>
+'use strict';
+const FPS = 30;
+const VIDEO_METADATA = {"w001t001.mp4": {"bytes": 111259820, "frames": 1439}, "w001t002.mp4": {"bytes": 198370161, "frames": 2553}, "w001t003.mp4": {"bytes": 120726334, "frames": 1553}, "w001t004.mp4": {"bytes": 64793567, "frames": 822}, "w001t005.mp4": {"bytes": 154467110, "frames": 1980}, "w001t007.mp4": {"bytes": 59260168, "frames": 740}, "w001t008.mp4": {"bytes": 54788767, "frames": 675}, "w001t009.mp4": {"bytes": 108606775, "frames": 1378}, "w001t010.mp4": {"bytes": 192158064, "frames": 2475}, "w001t011.mp4": {"bytes": 142852025, "frames": 1828}, "w001t012.mp4": {"bytes": 39743063, "frames": 500}, "w001t013.mp4": {"bytes": 183163329, "frames": 2355}, "w001t014.mp4": {"bytes": 185467339, "frames": 2389}, "w001t015.mp4": {"bytes": 140871544, "frames": 1803}, "w001t016.mp4": {"bytes": 80828761, "frames": 1019}, "w001t018.mp4": {"bytes": 251995390, "frames": 3264}, "w001t019.mp4": {"bytes": 88177213, "frames": 1108}, "w002t001.mp4": {"bytes": 147424424, "frames": 1890}, "w002t002.mp4": {"bytes": 99226384, "frames": 1253}, "w002t003.mp4": {"bytes": 89992688, "frames": 1158}, "w002t004.mp4": {"bytes": 51529782, "frames": 630}, "w002t005.mp4": {"bytes": 106510830, "frames": 1354}, "w002t006.mp4": {"bytes": 62429890, "frames": 780}, "w002t007.mp4": {"bytes": 77711650, "frames": 992}, "w002t008.mp4": {"bytes": 136598484, "frames": 1749}, "w002t009.mp4": {"bytes": 91198629, "frames": 1151}, "w002t010.mp4": {"bytes": 95972046, "frames": 1213}, "w002t011.mp4": {"bytes": 212975822, "frames": 2746}, "w002t012.mp4": {"bytes": 59641768, "frames": 737}, "w002t013.mp4": {"bytes": 52819183, "frames": 649}, "w002t014.mp4": {"bytes": 225325701, "frames": 2910}, "w002t016.mp4": {"bytes": 246126641, "frames": 3183}, "w002t017.mp4": {"bytes": 226552856, "frames": 2926}, "w002t018.mp4": {"bytes": 29785190, "frames": 351}, "w002t019.mp4": {"bytes": 110712726, "frames": 1408}, "w002t020.mp4": {"bytes": 39618039, "frames": 476}, "w002t021.mp4": {"bytes": 59878554, "frames": 742}, "w002t022.mp4": {"bytes": 129376905, "frames": 1651}, "w002t023.mp4": {"bytes": 78614858, "frames": 987}, "w002t024.mp4": {"bytes": 121263407, "frames": 1548}, "w002t025.mp4": {"bytes": 45072305, "frames": 546}, "w002t026.mp4": {"bytes": 203497652, "frames": 2638}, "w002t027.mp4": {"bytes": 40803129, "frames": 492}, "w002t028.mp4": {"bytes": 204189474, "frames": 2634}, "w002t029.mp4": {"bytes": 183717373, "frames": 2364}, "w002t030.mp4": {"bytes": 60364741, "frames": 753}, "w002t031.mp4": {"bytes": 66480348, "frames": 828}, "w002t032.mp4": {"bytes": 96925715, "frames": 1247}, "w002t033.mp4": {"bytes": 50452057, "frames": 619}, "w002t034.mp4": {"bytes": 74888560, "frames": 939}, "w002t035.mp4": {"bytes": 138587490, "frames": 1773}};
+const video = document.getElementById('video');
+const file = document.getElementById('file');
+const jump = document.getElementById('jump');
+const frame = document.getElementById('frame');
+const state = document.getElementById('state');
+const previous = document.getElementById('previous');
+const next = document.getElementById('next');
+const go = document.getElementById('go');
+const play = document.getElementById('play');
+const speed = document.getElementById('speed');
+const recent = document.getElementById('recent');
+const rangeStart = document.getElementById('range-start');
+const rangeEnd = document.getElementById('range-end');
+const markStart = document.getElementById('mark-start');
+const markEnd = document.getElementById('mark-end');
+const repeat = document.getElementById('repeat');
+const replay = document.getElementById('replay');
+const stopReplayButton = document.getElementById('stop-replay');
+const replayState = document.getElementById('replay-state');
+const precise = typeof video.requestVideoFrameCallback === 'function';
+let sourceURL = '', total = 0, shown = null, callbackID = null, sourceGeneration = 0, selectedMetadata = null;
+let requestedFrame = null, activeReplay = null, replayTimer = null, playAttempt = 0;
+let decodeTimer = null, queuedFrame = null;
+video.muted = true;
+function frameCount(duration) { return Math.max(1, Math.round(duration * FPS)); }
+function boundFrame(value, count) { return Math.max(1, Math.min(count, Math.trunc(value))); }
+function frameAt(mediaTime, count) { return boundFrame(Math.round(mediaTime * FPS) + 1, count); }
+function seekTime(index, count) { return (boundFrame(index, count) - 0.5) / FPS; }
+function controls(enabled) {
+  for (const item of [play, speed]) item.disabled = !enabled;
+  for (const item of [previous, next, go, jump, recent, rangeStart, rangeEnd, markStart, markEnd, repeat, replay]) item.disabled = !enabled || !precise;
+  stopReplayButton.disabled = !enabled || !activeReplay;
+}
+function status(message, warning=false) { state.textContent = message; state.classList.toggle('warn', warning); }
+function stopReplay(message='区间回放已停止，可继续逐帧确认。') {
+  activeReplay = null;
+  if (replayTimer !== null) clearTimeout(replayTimer);
+  replayTimer = null;
+  requestedFrame = null;
+  playAttempt += 1;
+  stopReplayButton.disabled = true;
+  replayState.textContent = message;
+}
+function resumePlayback() {
+  const generation = sourceGeneration, attempt = ++playAttempt;
+  video.play().catch(() => {
+    if (generation !== sourceGeneration || attempt !== playAttempt) return;
+    stopReplay('播放未启动，请点击“播放”或重新回放。');
+    status('浏览器未能开始播放，请再点击播放。', true);
+  });
+}
+function checkReplay() {
+  if (!activeReplay || video.seeking || requestedFrame || (!video.ended && (shown === null || video.paused || shown < activeReplay.end))) return;
+  const interval = activeReplay;
+  video.pause();
+  if (interval.repeat && interval.start < interval.end) {
+    // Hold the boundary briefly; each new seek is confirmed before playback resumes.
+    replayTimer = setTimeout(() => {
+      replayTimer = null;
+      if (activeReplay === interval) seek(interval.start, true, true);
+    }, 250);
+  } else {
+    stopReplay(`本次回放结束：源帧 ${interval.start}—${interval.end}。请逐帧确认标注边界。`);
+    seek(interval.end, false, true);
+  }
+}
+function confirmFrame(mediaTime) {
+  shown = frameAt(mediaTime, total);
+  if (decodeTimer !== null) { clearTimeout(decodeTimer); decodeTimer = null; }
+  frame.textContent = `已显示源帧：${shown} / ${total}`;
+  status(`已由浏览器确认显示帧；源视频30 fps，观看${video.playbackRate}×，源视频时间 ${mediaTime.toFixed(3)} 秒。`);
+  if (requestedFrame && shown === requestedFrame.target) {
+    const resume = requestedFrame.resume;
+    requestedFrame = null;
+    if (resume) resumePlayback();
+  }
+  checkReplay();
+}
+function observe(generation) {
+  callbackID = video.requestVideoFrameCallback((now, metadata) => {
+    if (generation !== sourceGeneration) return;
+    if (total && Number.isFinite(metadata.mediaTime)) {
+      if (video.seeking) {
+        // Some browsers submit the new frame before firing seeked. Retain only
+        // actual frame-callback evidence, never infer a displayed frame from time.
+        queuedFrame = {generation, target: requestedFrame?.target, mediaTime: metadata.mediaTime};
+      } else confirmFrame(metadata.mediaTime);
+    }
+    observe(generation);
+  });
+}
+function seek(value, resume=false, preserveReplay=false) {
+  if (!total || !Number.isFinite(value)) return;
+  if (!preserveReplay) stopReplay();
+  const target = boundFrame(value, total);
+  queuedFrame = null;
+  video.pause();
+  const requestedTime = seekTime(target, total);
+  jump.value = target;
+  if (precise && shown === target && !video.seeking) {
+    requestedFrame = null;
+    status(`当前已显示源帧 ${shown}。`);
+    if (resume) resumePlayback();
+    return;
+  }
+  requestedFrame = {target, resume};
+  shown = null;
+  frame.textContent = '已显示源帧：—（等待确认）';
+  video.currentTime = Math.min(requestedTime, Math.max(0, video.duration - 0.000001));
+  status(precise ? `正在请求源帧 ${target}，等待浏览器确认实际显示。` : '此浏览器无法精确确认源帧，请改用最新 Edge 或 Chrome。', !precise);
+}
+function step(delta) {
+  if (shown === null) { status('请等待实际显示帧确认后再逐帧操作。', true); return; }
+  seek(shown + delta);
+}
+function startReplay(start, end, looping) {
+  if (!Number.isInteger(start) || !Number.isInteger(end) || start < 1 || end > total || start > end) {
+    status(`回放起止必须是1—${total}内的整数，且起帧不晚于止帧。`, true);
+    return;
+  }
+  stopReplay();
+  if (start === end) { seek(start); replayState.textContent = '这是单帧范围，已跳转；可用左右键逐帧查看。'; return; }
+  activeReplay = {start, end, repeat: looping};
+  stopReplayButton.disabled = false;
+  replayState.textContent = `${looping ? '循环' : '单次'}回放源帧 ${start}—${end}（${video.playbackRate}×）。范围只用于观察，不是PNR答案。`;
+  seek(start, true, true);
+}
+function markRange(input) {
+  if (shown === null || video.seeking) { status('请等待实际显示帧确认后再设置回放边界。', true); return; }
+  video.pause(); stopReplay(); input.value = shown;
+}
+function togglePlayback() {
+  if (!video.paused) { video.pause(); stopReplay(); }
+  else {
+    const waiting = requestedFrame;
+    stopReplay();
+    if (waiting) seek(waiting.target, true);
+    else resumePlayback();
+  }
+}
+file.addEventListener('change', () => {
+  const selected = file.files[0];
+  if (!selected) return;
+  video.pause(); sourceGeneration += 1;
+  if (decodeTimer !== null) clearTimeout(decodeTimer);
+  stopReplay('回放范围只是临时观察窗口，不会写入填写表；建议包含事件前后各约1秒。');
+  if (precise && callbackID !== null) video.cancelVideoFrameCallback(callbackID);
+  if (sourceURL) URL.revokeObjectURL(sourceURL);
+  total = 0; shown = null; queuedFrame = null; controls(false); frame.textContent = '已显示源帧：—';
+  rangeStart.value = ''; rangeEnd.value = ''; jump.value = '';
+  document.getElementById('name').textContent = ` ${selected.name}`;
+  selectedMetadata = VIDEO_METADATA[selected.name];
+  if (!selectedMetadata || selectedMetadata.bytes !== selected.size) {
+    selectedMetadata = null;
+    video.removeAttribute('src'); video.load();
+    status('请选择本资料包 videos 中未修改的原视频。此文件名或大小与资料包不匹配，不能确认源帧号。', true);
+    return;
+  }
+  sourceURL = URL.createObjectURL(selected); video.src = sourceURL;
+  if (precise) observe(sourceGeneration);
+  const generation = sourceGeneration;
+  decodeTimer = setTimeout(() => {
+    if (generation === sourceGeneration && shown === null) {
+      stopReplay('尚未确认视频画面，不能用当前页面填写精确帧号。');
+      status('原视频采用HEVC编码。若一直黑屏或没有“已显示源帧”，当前浏览器可能无法解码；请联系老师检查播放器／解码支持，不要凭时间条猜帧或自行变速转码。', true);
+    }
+  }, 8000);
+  status('正在读取原视频……');
+});
+video.addEventListener('loadedmetadata', () => {
+  if (!Number.isFinite(video.duration) || video.duration <= 0) { status('无法读取视频时长。', true); return; }
+  if (!selectedMetadata) return;
+  total = selectedMetadata.frames;
+  for (const input of [jump, rangeStart, rangeEnd]) input.max = total;
+  video.playbackRate = Number(speed.value);
+  controls(true); seek(1);
+  if (!precise) status('警告：浏览器不支持 requestVideoFrameCallback，无法精确确认源帧。请改用最新 Edge 或 Chrome。', true);
+});
+video.addEventListener('error', () => {
+  video.pause(); stopReplay('视频未能解码，不能据此标注。');
+  status('无法播放原视频，可能缺少HEVC解码支持。请联系老师检查播放器／解码器，不要凭时间条猜帧。', true);
+});
+video.addEventListener('seeking', () => { shown = null; frame.textContent = '已显示源帧：—（等待确认）'; });
+video.addEventListener('seeked', () => {
+  const submitted = queuedFrame;
+  queuedFrame = null;
+  if (submitted && submitted.generation === sourceGeneration && requestedFrame &&
+      submitted.target === requestedFrame.target && frameAt(submitted.mediaTime, total) === requestedFrame.target) {
+    confirmFrame(submitted.mediaTime);
+  }
+});
+video.addEventListener('play', () => { play.textContent = '暂停'; });
+video.addEventListener('pause', () => { play.textContent = '播放'; });
+video.addEventListener('ended', checkReplay);
+play.addEventListener('click', togglePlayback);
+speed.addEventListener('change', () => { video.playbackRate = Number(speed.value); });
+markStart.addEventListener('click', () => markRange(rangeStart));
+markEnd.addEventListener('click', () => markRange(rangeEnd));
+replay.addEventListener('click', () => startReplay(Number(rangeStart.value), Number(rangeEnd.value), repeat.checked));
+stopReplayButton.addEventListener('click', () => { video.pause(); stopReplay(); });
+recent.addEventListener('click', () => {
+  if (shown === null) { status('请先暂停并等待已显示帧确认。', true); return; }
+  startReplay(Math.max(1, shown - 2 * FPS), shown, false);
+});
+for (const input of [rangeStart, rangeEnd, repeat]) input.addEventListener('change', () => { video.pause(); stopReplay('回放范围已调整，请重新点击“回放区间”。'); });
+previous.addEventListener('click', () => step(-1));
+next.addEventListener('click', () => step(1));
+go.addEventListener('click', () => seek(Number(jump.value)));
+jump.addEventListener('keydown', event => { if (event.key === 'Enter') seek(Number(jump.value)); });
+document.addEventListener('keydown', event => {
+  if (event.target.matches('input,select,button,video') || !total) return;
+  if (event.code === 'Space') { event.preventDefault(); togglePlayback(); return; }
+  if (!['ArrowLeft','ArrowRight'].includes(event.key)) return;
+  event.preventDefault(); step(event.key === 'ArrowLeft' ? -1 : 1);
+});
+if (!precise) status('此浏览器不支持精确显示帧确认，请使用最新 Edge 或 Chrome。', true);
+</script>
+</html>
